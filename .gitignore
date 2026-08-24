@@ -1,0 +1,18 @@
+# 秘密情報・環境依存設定
+.env
+*.token.cache
+ring_token.cache
+ring_gcm_token.cache
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# OS / エディタ
+.DS_Store
+*.swp
+.idea/
+.vscode/

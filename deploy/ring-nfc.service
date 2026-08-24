@@ -1,0 +1,15 @@
+[Unit]
+Description=Ring NFC Mode Switch
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Ring-NFC
+ExecStart=/home/pi/Ring-NFC/venv/bin/python3 /home/pi/Ring-NFC/src/nfc_ring_switch.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,4 @@
+ring-doorbell>=0.9.13
+adafruit-circuitpython-pn532>=2.4.0
+adafruit-blinka>=8.0.0
+python-dotenv>=1.0.0
