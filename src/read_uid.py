@@ -9,19 +9,20 @@ from __future__ import annotations
 import sys
 
 from config import load_config
-from nfc_reader import NfcReaderError, PN532Reader
+from nfc_reader import NfcReaderError, create_reader
 
 
 def main() -> int:
     config = load_config()
 
     try:
-        reader = PN532Reader(config.pn532_cs_pin)
+        reader = create_reader(config)
     except NfcReaderError as ex:
         print(f"エラー: {ex}", file=sys.stderr)
         return 1
 
-    print(f"PN532 検出: firmware={reader.firmware_version}")
+    firmware_version = getattr(reader, "firmware_version", "N/A")
+    print(f"NFCリーダー検出: type={config.nfc_reader_type} firmware={firmware_version}")
     print("カードをリーダーにかざしてください（Ctrl+C で終了）")
 
     last_uid: str | None = None
