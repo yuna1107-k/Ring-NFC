@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/Ring-NFC
-ExecStart=/home/pi/Ring-NFC/venv/bin/python3 /home/pi/Ring-NFC/src/nfc_ring_switch.py
+User=yuna1107
+WorkingDirectory=/home/yuna1107/development/Ring-NFC
+ExecStart=/home/yuna1107/development/Ring-NFC/venv/bin/python3 /home/yuna1107/development/Ring-NFC/src/nfc_ring_switch.py
 Restart=on-failure
 RestartSec=5
 
