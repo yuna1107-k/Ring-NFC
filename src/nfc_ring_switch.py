@@ -233,6 +233,7 @@ async def _run() -> int:
     control: ControlServer | None = None
     if config.control_port:
         control = ControlServer(
+            ring,
             state, mode_service, mode_lock, restart_event, config.control_port
         )
         try:

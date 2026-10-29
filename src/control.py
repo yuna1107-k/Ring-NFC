@@ -3,7 +3,7 @@
 127.0.0.1 にだけ待ち受ける。Ring の認証情報を使うのはこのプロセスだけにして、
 トークン更新が複数プロセスで取り合いにならないようにする。
 
-  GET  /status   現在のモード・在宅状態などを返す
+  GET  /status   現在のモード・在宅状態・Ring 機器（ファームウェア等）を返す
   POST /mode     {"mode": "home" | "away" | "disarmed"} でモードを変更
   POST /restart  プロセスを再起動する（終了コード 1 で抜け、systemd が再起動する）
 """
@@ -15,7 +15,10 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from importlib.metadata import PackageNotFoundError, version
+
 from aiohttp import web
+from ring_doorbell import Ring
 
 from config import VALID_MODES
 from mode_service import ModeService
@@ -24,6 +27,33 @@ _logger = logging.getLogger(__name__)
 
 # Ring API を叩きすぎないよう、/status でのモード再取得はこの秒数ごとに留める
 MODE_REFRESH_SECONDS = 60.0
+# 機器情報（ファームウェア・電池など）の再取得間隔
+DEVICES_REFRESH_SECONDS = 600.0
+
+
+def _lib_version() -> str | None:
+    try:
+        return version("ring_doorbell")
+    except PackageNotFoundError:
+        return None
+
+
+def _device_info(device) -> dict:
+    def attr(name):
+        try:
+            return getattr(device, name)
+        except Exception:  # noqa: BLE001 - 機種によって無い属性がある
+            return None
+
+    return {
+        "name": attr("name"),
+        "family": attr("family"),
+        "model": attr("model"),
+        "firmware": attr("firmware"),
+        "battery": attr("battery_life"),
+        "wifi_name": attr("wifi_name"),
+        "wifi_signal": attr("wifi_signal_strength"),
+    }
 
 
 @dataclass
@@ -50,12 +80,16 @@ class RuntimeState:
 class ControlServer:
     def __init__(
         self,
+        ring: Ring,
         state: RuntimeState,
         mode_service: ModeService,
         mode_lock: asyncio.Lock,
         restart_event: asyncio.Event,
         port: int,
     ) -> None:
+        self._ring = ring
+        self._devices: list[dict] = []
+        self._devices_at = 0.0
         self._state = state
         self._mode_service = mode_service
         self._mode_lock = mode_lock
@@ -89,7 +123,16 @@ class ControlServer:
             except Exception as ex:  # noqa: BLE001 - 取得失敗は呼び出し元に伝える
                 _logger.warning("モードの再取得に失敗しました: %s", ex)
                 error = str(ex)
+        if time.time() - self._devices_at > DEVICES_REFRESH_SECONDS:
+            self._devices_at = time.time()
+            try:
+                await self._ring.async_update_devices()
+                self._devices = [_device_info(d) for d in self._ring.get_device_list()]
+            except Exception as ex:  # noqa: BLE001
+                _logger.warning("Ring 機器情報の取得に失敗しました: %s", ex)
         return web.json_response({
+            "devices": self._devices,
+            "lib_version": _lib_version(),
             "mode": state.mode,
             "mode_checked_at": state.mode_checked_at or None,
             "mode_error": error,
