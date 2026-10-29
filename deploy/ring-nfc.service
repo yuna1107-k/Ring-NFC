@@ -1,5 +1,5 @@
 [Unit]
-Description=Ring NFC Mode Switch
+Description=Ring Mode Switch (presence / NFC)
 After=network-online.target
 Wants=network-online.target
 

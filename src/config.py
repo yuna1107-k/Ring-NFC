@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass
 
@@ -15,6 +16,13 @@ DEFAULT_PN532_CS_PIN = "D25"
 DEFAULT_DEBOUNCE_SECONDS = 3.0
 DEFAULT_TOGGLE_MODE_A = "home"
 DEFAULT_TOGGLE_MODE_B = "away"
+DEFAULT_PRESENCE_ABSENT_SECONDS = 600.0
+DEFAULT_PRESENCE_CHECK_INTERVAL = 30.0
+DEFAULT_PRESENCE_HOME_MODE = "home"
+DEFAULT_PRESENCE_AWAY_MODE = "away"
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off", ""}
 
 
 class ConfigError(ValueError):
@@ -31,22 +39,57 @@ class Config:
     card_uid: str | None
     toggle_mode_a: str
     toggle_mode_b: str
+    nfc_enabled: bool
+    presence_hosts: tuple[str, ...]
+    presence_absent_seconds: float
+    presence_check_interval: float
+    presence_home_mode: str
+    presence_away_mode: str
+
+    @property
+    def presence_enabled(self) -> bool:
+        return bool(self.presence_hosts)
 
 
 def _normalize_uid(raw: str) -> str:
     return raw.strip().upper().replace(":", "").replace("-", "").replace(" ", "")
 
 
-def _parse_debounce(raw: str) -> float:
+def _parse_seconds(name: str, raw: str, *, allow_zero: bool) -> float:
     try:
         value = float(raw)
     except ValueError as ex:
-        raise ConfigError(
-            f"DEBOUNCE_SECONDS は数値である必要があります: {raw!r}"
-        ) from ex
-    if value < 0:
-        raise ConfigError("DEBOUNCE_SECONDS は 0 以上である必要があります")
+        raise ConfigError(f"{name} は数値である必要があります: {raw!r}") from ex
+    if value < 0 or (value == 0 and not allow_zero):
+        bound = "0 以上の値" if allow_zero else "0 より大きい値"
+        raise ConfigError(f"{name} は {bound}である必要があります")
     return value
+
+
+def _parse_bool(name: str, raw: str) -> bool:
+    value = raw.strip().lower()
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    raise ConfigError(f"{name} は true / false のいずれかである必要があります: {raw!r}")
+
+
+def parse_hosts(raw: str) -> tuple[str, ...]:
+    hosts: list[str] = []
+    for item in raw.split(","):
+        host = item.strip()
+        if not host:
+            continue
+        try:
+            ipaddress.ip_address(host)
+        except ValueError as ex:
+            raise ConfigError(
+                f"PRESENCE_HOSTS には IP アドレスを指定してください: {host!r}"
+            ) from ex
+        if host not in hosts:
+            hosts.append(host)
+    return tuple(hosts)
 
 
 def _validate_mode(name: str, value: str) -> str:
@@ -66,8 +109,10 @@ def load_config(env_path: str | None = None) -> Config:
     ring_token_cache = os.environ.get("RING_TOKEN_CACHE", "").strip() or DEFAULT_TOKEN_CACHE
     ring_user_agent = os.environ.get("RING_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
     pn532_cs_pin = os.environ.get("PN532_CS_PIN", "").strip() or DEFAULT_PN532_CS_PIN
-    debounce_seconds = _parse_debounce(
-        os.environ.get("DEBOUNCE_SECONDS", "").strip() or str(DEFAULT_DEBOUNCE_SECONDS)
+    debounce_seconds = _parse_seconds(
+        "DEBOUNCE_SECONDS",
+        os.environ.get("DEBOUNCE_SECONDS", "").strip() or str(DEFAULT_DEBOUNCE_SECONDS),
+        allow_zero=True,
     )
     card_uid_raw = os.environ.get("CARD_UID", "").strip()
     card_uid = _normalize_uid(card_uid_raw) if card_uid_raw else None
@@ -82,6 +127,33 @@ def load_config(env_path: str | None = None) -> Config:
             "TOGGLE_MODE_A と TOGGLE_MODE_B は異なるモードである必要があります"
         )
 
+    nfc_enabled = _parse_bool("NFC_ENABLED", os.environ.get("NFC_ENABLED", ""))
+    presence_hosts = parse_hosts(os.environ.get("PRESENCE_HOSTS", ""))
+    presence_absent_seconds = _parse_seconds(
+        "PRESENCE_ABSENT_SECONDS",
+        os.environ.get("PRESENCE_ABSENT_SECONDS", "").strip()
+        or str(DEFAULT_PRESENCE_ABSENT_SECONDS),
+        allow_zero=False,
+    )
+    presence_check_interval = _parse_seconds(
+        "PRESENCE_CHECK_INTERVAL",
+        os.environ.get("PRESENCE_CHECK_INTERVAL", "").strip()
+        or str(DEFAULT_PRESENCE_CHECK_INTERVAL),
+        allow_zero=False,
+    )
+    presence_home_mode = _validate_mode(
+        "PRESENCE_HOME_MODE",
+        os.environ.get("PRESENCE_HOME_MODE", "").strip() or DEFAULT_PRESENCE_HOME_MODE,
+    )
+    presence_away_mode = _validate_mode(
+        "PRESENCE_AWAY_MODE",
+        os.environ.get("PRESENCE_AWAY_MODE", "").strip() or DEFAULT_PRESENCE_AWAY_MODE,
+    )
+    if presence_home_mode == presence_away_mode:
+        raise ConfigError(
+            "PRESENCE_HOME_MODE と PRESENCE_AWAY_MODE は異なるモードである必要があります"
+        )
+
     return Config(
         ring_location_id=ring_location_id,
         ring_token_cache=ring_token_cache,
@@ -91,4 +163,10 @@ def load_config(env_path: str | None = None) -> Config:
         card_uid=card_uid,
         toggle_mode_a=toggle_mode_a,
         toggle_mode_b=toggle_mode_b,
+        nfc_enabled=nfc_enabled,
+        presence_hosts=presence_hosts,
+        presence_absent_seconds=presence_absent_seconds,
+        presence_check_interval=presence_check_interval,
+        presence_home_mode=presence_home_mode,
+        presence_away_mode=presence_away_mode,
     )
