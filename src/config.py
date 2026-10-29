@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
@@ -26,6 +27,7 @@ DEFAULT_PRESENCE_AWAY_MODE = "away"
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off", ""}
+_HOSTNAME_RE = re.compile(r"^[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})*\.?$")
 
 
 class ConfigError(ValueError):
@@ -46,6 +48,7 @@ class Config:
     toggle_mode_b: str
     nfc_enabled: bool
     presence_hosts: tuple[str, ...]
+    presence_dns_server: str | None
     presence_absent_seconds: float
     presence_check_interval: float
     presence_home_mode: str
@@ -80,18 +83,24 @@ def _parse_bool(name: str, raw: str) -> bool:
     raise ConfigError(f"{name} は true / false のいずれかである必要があります: {raw!r}")
 
 
+def _is_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
 def parse_hosts(raw: str) -> tuple[str, ...]:
     hosts: list[str] = []
     for item in raw.split(","):
         host = item.strip()
         if not host:
             continue
-        try:
-            ipaddress.ip_address(host)
-        except ValueError as ex:
+        if not _is_ip(host) and not _HOSTNAME_RE.match(host):
             raise ConfigError(
-                f"PRESENCE_HOSTS には IP アドレスを指定してください: {host!r}"
-            ) from ex
+                f"PRESENCE_HOSTS には IP アドレスかホスト名を指定してください: {host!r}"
+            )
         if host not in hosts:
             hosts.append(host)
     return tuple(hosts)
@@ -145,6 +154,11 @@ def load_config(env_path: str | None = None) -> Config:
 
     nfc_enabled = _parse_bool("NFC_ENABLED", os.environ.get("NFC_ENABLED", ""))
     presence_hosts = parse_hosts(os.environ.get("PRESENCE_HOSTS", ""))
+    presence_dns_server = os.environ.get("PRESENCE_DNS_SERVER", "").strip() or None
+    if presence_dns_server is not None and not _is_ip(presence_dns_server):
+        raise ConfigError(
+            f"PRESENCE_DNS_SERVER には IP アドレスを指定してください: {presence_dns_server!r}"
+        )
     presence_absent_seconds = _parse_seconds(
         "PRESENCE_ABSENT_SECONDS",
         os.environ.get("PRESENCE_ABSENT_SECONDS", "").strip()
@@ -183,6 +197,7 @@ def load_config(env_path: str | None = None) -> Config:
         toggle_mode_b=toggle_mode_b,
         nfc_enabled=nfc_enabled,
         presence_hosts=presence_hosts,
+        presence_dns_server=presence_dns_server,
         presence_absent_seconds=presence_absent_seconds,
         presence_check_interval=presence_check_interval,
         presence_home_mode=presence_home_mode,

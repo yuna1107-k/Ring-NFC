@@ -3,7 +3,7 @@
 
 使い方:
   python3 src/check_presence.py                 # .env の PRESENCE_HOSTS を確認
-  python3 src/check_presence.py 192.168.1.23    # 指定 IP を確認
+  python3 src/check_presence.py 192.168.1.23    # 指定 IP / ホスト名を確認
 Ctrl+C で終了するまで、確認間隔ごとに結果を表示し続ける。
 """
 
@@ -17,8 +17,10 @@ from config import ConfigError, parse_hosts, load_config
 from presence import PresenceDetector
 
 
-async def _run(hosts: tuple[str, ...], interval: float) -> None:
-    detector = PresenceDetector(hosts)
+async def _run(
+    hosts: tuple[str, ...], interval: float, dns_server: str | None
+) -> None:
+    detector = PresenceDetector(hosts, dns_server)
     while True:
         results = await detector.check()
         stamp = time.strftime("%H:%M:%S")
@@ -35,12 +37,12 @@ def main() -> int:
         print(f"エラー: {ex}", file=sys.stderr)
         return 1
     if not hosts:
-        print("エラー: PRESENCE_HOSTS が未設定です（引数で IP を指定することもできます）", file=sys.stderr)
+        print("エラー: PRESENCE_HOSTS が未設定です（引数で IP / ホスト名を指定することもできます）", file=sys.stderr)
         return 1
 
     print(f"確認対象: {', '.join(hosts)}（{config.presence_check_interval:g} 秒ごと / Ctrl+C で終了）")
     try:
-        asyncio.run(_run(hosts, config.presence_check_interval))
+        asyncio.run(_run(hosts, config.presence_check_interval, config.presence_dns_server))
     except KeyboardInterrupt:
         print()
     return 0

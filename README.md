@@ -46,7 +46,7 @@ Raspberry Pi が家の LAN 上で**指定した端末（スマホ等）**を見�
 ```bash
 # 1. 設定ファイルを用意
 cp .env.example .env
-#    .env を編集（PRESENCE_HOSTS に端末の IP を設定）
+#    .env を編集（PRESENCE_HOSTS に端末のホスト名か IP を設定）
 
 # 2. 依存インストール
 python3 -m venv venv && source venv/bin/activate

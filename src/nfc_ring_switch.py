@@ -200,7 +200,9 @@ async def _run() -> int:
         _logger.info("NFC 読み取りループを開始しました。カードをかざしてください。")
 
     if config.presence_enabled:
-        detector = PresenceDetector(config.presence_hosts)
+        detector = PresenceDetector(
+            config.presence_hosts, config.presence_dns_server
+        )
         tasks.append(
             asyncio.ensure_future(
                 _presence_loop(detector, mode_service, config, mode_lock)
