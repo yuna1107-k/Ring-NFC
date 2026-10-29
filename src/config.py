@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 VALID_MODES = {"home", "away", "disarmed"}
+VALID_READER_TYPES = {"pn532", "rcs380"}
 
 DEFAULT_TOKEN_CACHE = "./ring_token.cache"
 DEFAULT_USER_AGENT = "RingNfcSwitch/1.0"
@@ -16,6 +17,8 @@ DEFAULT_PN532_CS_PIN = "D25"
 DEFAULT_DEBOUNCE_SECONDS = 3.0
 DEFAULT_TOGGLE_MODE_A = "home"
 DEFAULT_TOGGLE_MODE_B = "away"
+DEFAULT_NFC_READER_TYPE = "pn532"
+DEFAULT_RCS380_DEVICE_PATH = "usb"
 DEFAULT_PRESENCE_ABSENT_SECONDS = 600.0
 DEFAULT_PRESENCE_CHECK_INTERVAL = 30.0
 DEFAULT_PRESENCE_HOME_MODE = "home"
@@ -34,7 +37,9 @@ class Config:
     ring_location_id: str | None
     ring_token_cache: str
     ring_user_agent: str
+    nfc_reader_type: str
     pn532_cs_pin: str
+    rcs380_device_path: str
     debounce_seconds: float
     card_uid: str | None
     toggle_mode_a: str
@@ -108,7 +113,18 @@ def load_config(env_path: str | None = None) -> Config:
     ring_location_id = os.environ.get("RING_LOCATION_ID", "").strip() or None
     ring_token_cache = os.environ.get("RING_TOKEN_CACHE", "").strip() or DEFAULT_TOKEN_CACHE
     ring_user_agent = os.environ.get("RING_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
+    nfc_reader_type = (
+        os.environ.get("NFC_READER_TYPE", "").strip().lower() or DEFAULT_NFC_READER_TYPE
+    )
+    if nfc_reader_type not in VALID_READER_TYPES:
+        raise ConfigError(
+            f"NFC_READER_TYPE は {sorted(VALID_READER_TYPES)} のいずれかである必要があります: "
+            f"{nfc_reader_type!r}"
+        )
     pn532_cs_pin = os.environ.get("PN532_CS_PIN", "").strip() or DEFAULT_PN532_CS_PIN
+    rcs380_device_path = (
+        os.environ.get("RCS380_DEVICE_PATH", "").strip() or DEFAULT_RCS380_DEVICE_PATH
+    )
     debounce_seconds = _parse_seconds(
         "DEBOUNCE_SECONDS",
         os.environ.get("DEBOUNCE_SECONDS", "").strip() or str(DEFAULT_DEBOUNCE_SECONDS),
@@ -158,7 +174,9 @@ def load_config(env_path: str | None = None) -> Config:
         ring_location_id=ring_location_id,
         ring_token_cache=ring_token_cache,
         ring_user_agent=ring_user_agent,
+        nfc_reader_type=nfc_reader_type,
         pn532_cs_pin=pn532_cs_pin,
+        rcs380_device_path=rcs380_device_path,
         debounce_seconds=debounce_seconds,
         card_uid=card_uid,
         toggle_mode_a=toggle_mode_a,

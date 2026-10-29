@@ -6,7 +6,10 @@ nfcpy/pyscard 等）へ差し替え可能（design.md 9章）。
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from config import Config
 
 
 class NfcReaderError(RuntimeError):
@@ -62,3 +65,49 @@ class PN532Reader:
         if uid is None:
             return None
         return "".join(f"{byte:02X}" for byte in uid)
+
+
+class RcS380Reader:
+    """Sony RC-S380（PaSoRi）から nfcpy 経由で UID を読み取る。"""
+
+    _TARGETS = ("106A", "106B", "212F")
+
+    def __init__(self, device_path: str = "usb") -> None:
+        try:
+            import nfc
+        except ImportError as ex:
+            raise NfcReaderError(
+                "nfcpy の読み込みに失敗しました。`pip install -r requirements.txt` "
+                "を実行してください。"
+            ) from ex
+
+        self._nfc = nfc
+        try:
+            self._clf = nfc.ContactlessFrontend(device_path)
+        except OSError as ex:
+            raise NfcReaderError(
+                f"RC-S380 が検出できませんでした（device_path={device_path!r}）。"
+                "USB接続と udev のアクセス権限を確認してください。"
+            ) from ex
+
+        self.firmware_version = str(self._clf.device)
+
+    def read_uid(self, timeout: float) -> str | None:
+        targets = [self._nfc.clf.RemoteTarget(t) for t in self._TARGETS]
+        target = self._clf.sense(*targets, iterations=1, interval=timeout)
+        if target is None:
+            return None
+        tag = self._nfc.tag.activate(self._clf, target)
+        if tag is None:
+            return None
+        return "".join(f"{byte:02X}" for byte in tag.identifier)
+
+    def close(self) -> None:
+        self._clf.close()
+
+
+def create_reader(config: Config) -> NfcReader:
+    """`config.nfc_reader_type` に応じたリーダーを生成する。"""
+    if config.nfc_reader_type == "rcs380":
+        return RcS380Reader(config.rcs380_device_path)
+    return PN532Reader(config.pn532_cs_pin)

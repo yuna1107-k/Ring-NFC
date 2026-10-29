@@ -15,8 +15,8 @@ import time
 
 from config import Config, load_config
 from mode_service import ModeService, ModeServiceError, resolve_location_id
-from nfc_reader import NfcReaderError, PN532Reader
-from presence import ABSENT, PRESENT, PresenceDetector, PresenceTracker
+from nfc_reader import NfcReader, NfcReaderError, create_reader
+from presence import PRESENT, PresenceDetector, PresenceTracker
 from ring_client import AuthorizationRequiredError, create_authenticated_ring
 
 _logger = logging.getLogger("ring_nfc_switch")
@@ -31,7 +31,7 @@ def _target_mode(current: str, config: Config) -> str:
 
 
 async def _read_loop(
-    reader: PN532Reader,
+    reader: NfcReader,
     mode_service: ModeService,
     config: Config,
     mode_lock: asyncio.Lock,
@@ -181,14 +181,19 @@ async def _run() -> int:
 
     mode_lock = asyncio.Lock()
     tasks: list[asyncio.Future] = []
+    reader: NfcReader | None = None
 
     if config.nfc_enabled:
         try:
-            reader = PN532Reader(config.pn532_cs_pin)
+            reader = create_reader(config)
         except NfcReaderError as ex:
             _logger.error("%s", ex)
             return 1
-        _logger.info("PN532 検出: firmware=%s", reader.firmware_version)
+        _logger.info(
+            "NFCリーダー検出: type=%s firmware=%s",
+            config.nfc_reader_type,
+            getattr(reader, "firmware_version", "N/A"),
+        )
         tasks.append(
             asyncio.ensure_future(_read_loop(reader, mode_service, config, mode_lock))
         )
@@ -221,6 +226,9 @@ async def _run() -> int:
         task.cancel()
     stop_task.cancel()
 
+    close = getattr(reader, "close", None)
+    if close is not None:
+        close()
     _logger.info("終了します。")
     return exit_code
 
