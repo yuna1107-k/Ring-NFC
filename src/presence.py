@@ -107,6 +107,11 @@ class PresenceDetector:
         self._ip_command_available = True
         self._last_resolved: dict[str, str | None] = {}
 
+    @property
+    def resolved(self) -> dict[str, str | None]:
+        """直近に解決したホスト名 -> IP（IP 指定のホストはそのまま）。"""
+        return {h: (h if _is_ip(h) else self._last_resolved.get(h)) for h in self._hosts}
+
     async def resolve(self, host: str) -> str | None:
         """ホスト名を IPv4 アドレスに解決する（IP ならそのまま返す）。"""
         if _is_ip(host):

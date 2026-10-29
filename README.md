@@ -79,6 +79,17 @@ sudo systemctl enable --now ring-nfc
 journalctl -u ring-nfc -f
 ```
 
+## ローカル操作 API
+
+同じ Pi 上のステータスページなどから使う API です（`127.0.0.1:8095`、`CONTROL_PORT` で変更、0 で無効）。
+Ring の認証情報を使うのはこのプロセスだけなので、トークン更新の取り合いが起きません。
+
+```bash
+curl -s 127.0.0.1:8095/status                              # モード・在宅状態
+curl -s -X POST 127.0.0.1:8095/mode -d '{"mode":"away"}'   # モード変更
+curl -s -X POST 127.0.0.1:8095/restart                     # 再起動（.env の再読込）
+```
+
 ## 設定
 
 すべて環境変数（`.env`）で与えます。項目一覧は [.env.example](./.env.example) と

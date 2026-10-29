@@ -14,6 +14,7 @@ import signal
 import time
 
 from config import Config, load_config
+from control import ControlServer, RuntimeState
 from mode_service import ModeService, ModeServiceError, resolve_location_id
 from nfc_reader import NfcReader, NfcReaderError, create_reader
 from presence import PRESENT, PresenceDetector, PresenceTracker
@@ -35,6 +36,7 @@ async def _read_loop(
     mode_service: ModeService,
     config: Config,
     mode_lock: asyncio.Lock,
+    state: RuntimeState,
 ) -> None:
     loop = asyncio.get_running_loop()
     last_uid: str | None = None
@@ -63,6 +65,7 @@ async def _read_loop(
                 current_mode = await mode_service.get_mode()
                 target_mode = _target_mode(current_mode, config)
                 await mode_service.set_mode(target_mode)
+                state.set_mode(target_mode)
             _logger.info(
                 "モードを切り替えました: %s -> %s (uid=%s)",
                 current_mode,
@@ -74,14 +77,20 @@ async def _read_loop(
 
 
 async def _apply_mode(
-    mode_service: ModeService, target_mode: str, reason: str, mode_lock: asyncio.Lock
+    mode_service: ModeService,
+    target_mode: str,
+    reason: str,
+    mode_lock: asyncio.Lock,
+    state: RuntimeState,
 ) -> None:
     async with mode_lock:
         current_mode = await mode_service.get_mode()
+        state.set_mode(current_mode)
         if current_mode == target_mode:
             _logger.info("%s: 既に %s のため変更しません", reason, target_mode)
             return
         await mode_service.set_mode(target_mode)
+        state.set_mode(target_mode)
     _logger.info("%s: モードを切り替えました: %s -> %s", reason, current_mode, target_mode)
 
 
@@ -90,6 +99,7 @@ async def _presence_loop(
     mode_service: ModeService,
     config: Config,
     mode_lock: asyncio.Lock,
+    state: RuntimeState,
 ) -> None:
     tracker = PresenceTracker(
         absent_seconds=config.presence_absent_seconds,
@@ -101,6 +111,8 @@ async def _presence_loop(
         results = await detector.check()
         present = any(results.values())
         now = time.monotonic()
+        state.set_present(present)
+        state.hosts = detector.resolved
 
         if present != was_seen:
             if present:
@@ -121,7 +133,7 @@ async def _presence_loop(
                 target = config.presence_away_mode
                 reason = f"端末が {int(tracker.unseen_seconds(now))} 秒間未接続"
             try:
-                await _apply_mode(mode_service, target, reason, mode_lock)
+                await _apply_mode(mode_service, target, reason, mode_lock, state)
                 tracker.state = desired
             except Exception:
                 _logger.exception(
@@ -180,6 +192,9 @@ async def _run() -> int:
     _logger.info("現在のモード: %s (location_id=%s)", current_mode, location_id)
 
     mode_lock = asyncio.Lock()
+    state = RuntimeState()
+    state.set_mode(current_mode)
+    restart_event = asyncio.Event()
     tasks: list[asyncio.Future] = []
     reader: NfcReader | None = None
 
@@ -195,7 +210,7 @@ async def _run() -> int:
             getattr(reader, "firmware_version", "N/A"),
         )
         tasks.append(
-            asyncio.ensure_future(_read_loop(reader, mode_service, config, mode_lock))
+            asyncio.ensure_future(_read_loop(reader, mode_service, config, mode_lock, state))
         )
         _logger.info("NFC 読み取りループを開始しました。カードをかざしてください。")
 
@@ -205,7 +220,7 @@ async def _run() -> int:
         )
         tasks.append(
             asyncio.ensure_future(
-                _presence_loop(detector, mode_service, config, mode_lock)
+                _presence_loop(detector, mode_service, config, mode_lock, state)
             )
         )
         _logger.info("端末検出ループを開始しました。")
@@ -215,18 +230,34 @@ async def _run() -> int:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop_event.set)
 
+    control: ControlServer | None = None
+    if config.control_port:
+        control = ControlServer(
+            state, mode_service, mode_lock, restart_event, config.control_port
+        )
+        try:
+            await control.start()
+        except OSError as ex:
+            _logger.error("操作 API を開始できません（port=%d）: %s", config.control_port, ex)
+            control = None
+
     stop_task = asyncio.ensure_future(stop_event.wait())
+    restart_task = asyncio.ensure_future(restart_event.wait())
     done, _ = await asyncio.wait(
-        [stop_task, *tasks], return_when=asyncio.FIRST_COMPLETED
+        [stop_task, restart_task, *tasks], return_when=asyncio.FIRST_COMPLETED
     )
 
-    exit_code = 0
+    # 再起動要求は終了コード 1 で抜け、systemd（Restart=on-failure）に立ち上げ直してもらう
+    exit_code = 1 if restart_task in done else 0
     for task in tasks:
         if task in done and not task.cancelled() and task.exception() is not None:
             _logger.error("ループが異常終了しました", exc_info=task.exception())
             exit_code = 1
         task.cancel()
     stop_task.cancel()
+    restart_task.cancel()
+    if control is not None:
+        await control.stop()
 
     close = getattr(reader, "close", None)
     if close is not None:

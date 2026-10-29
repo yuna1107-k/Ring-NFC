@@ -24,6 +24,7 @@ DEFAULT_PRESENCE_ABSENT_SECONDS = 600.0
 DEFAULT_PRESENCE_CHECK_INTERVAL = 30.0
 DEFAULT_PRESENCE_HOME_MODE = "home"
 DEFAULT_PRESENCE_AWAY_MODE = "away"
+DEFAULT_CONTROL_PORT = 8095
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off", ""}
@@ -53,6 +54,7 @@ class Config:
     presence_check_interval: float
     presence_home_mode: str
     presence_away_mode: str
+    control_port: int
 
     @property
     def presence_enabled(self) -> bool:
@@ -184,6 +186,14 @@ def load_config(env_path: str | None = None) -> Config:
             "PRESENCE_HOME_MODE と PRESENCE_AWAY_MODE は異なるモードである必要があります"
         )
 
+    control_port_raw = os.environ.get("CONTROL_PORT", "").strip()
+    try:
+        control_port = int(control_port_raw) if control_port_raw else DEFAULT_CONTROL_PORT
+    except ValueError as ex:
+        raise ConfigError(f"CONTROL_PORT は整数である必要があります: {control_port_raw!r}") from ex
+    if not 0 <= control_port <= 65535:
+        raise ConfigError("CONTROL_PORT は 0〜65535 である必要があります（0 で無効）")
+
     return Config(
         ring_location_id=ring_location_id,
         ring_token_cache=ring_token_cache,
@@ -202,4 +212,5 @@ def load_config(env_path: str | None = None) -> Config:
         presence_check_interval=presence_check_interval,
         presence_home_mode=presence_home_mode,
         presence_away_mode=presence_away_mode,
+        control_port=control_port,
     )

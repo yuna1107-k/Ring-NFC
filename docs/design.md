@@ -118,6 +118,7 @@
 | `RING_USER_AGENT` | 任意 | `RingNfcSwitch/1.0` | Ring API 用の User-Agent 名 |
 | `PRESENCE_HOSTS` | 任意※ | （空=無効） | 在宅判定に使う端末の IP またはホスト名（カンマ区切りで複数可）。ホスト名は確認のたびに IP を引き直す |
 | `PRESENCE_DNS_SERVER` | 任意 | （空=OS の名前解決） | ホスト名を問い合わせる DNS サーバー（通常はルーター）。systemd-resolved はドットなしの名前を解決しないため指定する |
+| `CONTROL_PORT` | 任意 | `8095` | ローカル操作 API のポート（127.0.0.1 のみ。`GET /status`・`POST /mode`・`POST /restart`）。0 で無効 |
 | `PRESENCE_ABSENT_SECONDS` | 任意 | `600` | この秒数以上続けて見えなければ不在 |
 | `PRESENCE_CHECK_INTERVAL` | 任意 | `30` | 端末を確認する間隔（秒） |
 | `PRESENCE_HOME_MODE` | 任意 | `home` | 端末接続時に設定するモード |
